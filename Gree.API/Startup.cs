@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -9,11 +9,15 @@ using Microsoft.AspNetCore.HttpsPolicy;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Swashbuckle.AspNetCore.Swagger;
 
 namespace Gree.API
 {
     public class Startup
     {
+        private const string GREE_MANAGER = "Gree Manager";
+        private const string VERSION = "v0.1";
+
         public Startup(IConfiguration configuration)
         {
             Configuration = configuration;
@@ -31,10 +35,16 @@ namespace Gree.API
                 options.MinimumSameSitePolicy = SameSiteMode.None;
             });
 
+            services.AddMvcCore()
+                    .AddJsonFormatters()
+                    .AddApiExplorer()
+                    .SetCompatibilityVersion(CompatibilityVersion.Version_2_2);
 
-            services.AddMvc().SetCompatibilityVersion(CompatibilityVersion.Version_2_2);
-            
-            services.AddSignalR();
+            services.AddSwaggerGen(options =>
+            {
+                options.SwaggerDoc(VERSION, new Info { Title = GREE_MANAGER, Version = VERSION });
+                options.DescribeAllEnumsAsStrings();
+            });
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
@@ -54,23 +64,18 @@ namespace Gree.API
             app.UseHttpsRedirection();
             app.UseStaticFiles();
             app.UseCookiePolicy();
-            app.UseSignalR(routes =>
-            {
-                routes.MapHub<GreeHub>("/greeHub");
-            });
 
-            app.UseMvc(routes =>
+            ConfigureSwagger(app);
+            app.UseMvc();
+        }
+
+        protected void ConfigureSwagger(IApplicationBuilder app)
+        {
+            app.UseSwagger();
+
+            app.UseSwaggerUI(options =>
             {
-                routes.MapRoute("getcount", "getcount",
-                    defaults: new { controller = "Home", action = "GetConditionersCount" });
-                routes.MapRoute("stop", "stopall",
-                    defaults: new { controller = "Home", action = "StopAll" });
-                routes.MapRoute("kitchen", "coolkitchen",
-                    defaults: new { controller = "Home", action = "CoolKitchen" });
-                routes.MapRoute("bedroom", "coolbedroom",
-                    defaults: new { controller = "Home", action = "CoolBedroom" });
-                routes.MapRoute("statbedroom", "statbedroom",
-                    defaults: new { controller = "Home", action = "GetStatus" });
+                options.SwaggerEndpoint($"/swagger/{VERSION}/swagger.json", $"{GREE_MANAGER} {VERSION}");
             });
         }
     }
