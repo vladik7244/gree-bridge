@@ -1,6 +1,0 @@
-{
-	"network": {
-		"broadcast" : [ "192.168.0.255" ]
-	},
-	"skip-initial-scan": false
-}

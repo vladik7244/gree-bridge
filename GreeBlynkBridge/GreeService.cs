@@ -1,64 +1,47 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
+﻿using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
 using System.Threading.Tasks;
 using System.Timers;
 using GreeBlynkBridge.Gree;
+using GreeBlynkBridge.VladControllers;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace GreeBlynkBridge
 {
-    public class GreeBridge
+    public class GreeService : IConditionerService
     {
-        private static ILogger log = Logging.Logger.CreateDefaultLogger();
+        private readonly ILogger log = Logging.Logger.CreateDefaultLogger();
 
-        private static List<Controller> _controllers;
+        private List<Controller> _controllers;
 
-        public static List<Controller> GetControllers()
+        private static readonly Dictionary<ControllerEnum, string> _controllersMap
+            = new Dictionary<ControllerEnum, string>
+            {
+                {ControllerEnum.Kitchen, "f4911e75f8c3"},
+                {ControllerEnum.Bedroom, "f4911e75fa22"},
+                {ControllerEnum.SecondaryBedroom, "f4911e764fe0"}
+            };
+
+        public GreeService(IConfiguration config)
+        {
+            this.Initialize(config);
+        }
+
+        public List<Controller> GetControllers()
         {
             return _controllers;
         }
-            
-        public static Controller GetControllerByName(string name)
+
+        public Controller GetController(ControllerEnum location)
         {
-            switch (name)
-            {
-                case "kit":
-                    return _controllers.Single(c => c.DeviceID == "f4911e75f8c3");
-                case "cab":
-                    return _controllers.Single(c => c.DeviceID == "f4911e764fe0");
-                case "bed":
-                    return _controllers.Single(c => c.DeviceID == "f4911e75fa22");
-                default:
-                    throw new Exception("Name is wrong");
-            }
+            return _controllersMap.TryGetValue(location, out string id)
+                ? _controllers.Single(c => c.DeviceID == id)
+                : throw new KeyNotFoundException($"Controller not found: {location.ToString()}");
         }
 
-        public static async void Run()
+        private async void Initialize(IConfiguration config)
         {
-            var basePath = Directory.GetParent(new Uri(Assembly.GetExecutingAssembly().CodeBase).AbsolutePath).FullName;
-
-            log.LogDebug($"basePath: {basePath}");
-
-            var configBuilder = new ConfigurationBuilder()
-                .SetBasePath(basePath)
-                .AddJsonFile("config.json");
-
-            IConfiguration config;
-
-            try
-            {
-                config = configBuilder.Build();
-            }
-            catch (Exception e)
-            {
-                log.LogCritical($"Failed to load configuration: {e.Message}");
-                throw;
-            }
-
             if (config["skip-initial-scan"] != "True")
             {
                 await DiscoverDevices(config);
@@ -71,10 +54,12 @@ namespace GreeBlynkBridge
             _controllers = Database.AirConditionerManager.LoadAll().Select((m) => new Gree.Controller(m)).ToList();
             log.LogDebug($"Controllers loaded: {_controllers.Count}");
 
-
             foreach (var c in _controllers)
             {
-                c.DeviceStatusChanged += DeviceStatusChanged;
+                c.DeviceStatusChanged += (sender, e) =>
+                {
+                    log.LogDebug($"Device ({(sender as Gree.Controller).DeviceName}) changed");
+                };
             }
 
             var deviceUpdateTimer = new Timer(10000)
@@ -94,12 +79,7 @@ namespace GreeBlynkBridge
             };
         }
 
-        private static void DeviceStatusChanged(object sender, Gree.DeviceStatusChangedEventArgs e)
-        {
-            log.LogDebug($"Device ({(sender as Gree.Controller).DeviceName}) changed");
-        }
-
-        private static async Task DiscoverDevices(IConfiguration config)
+        private async Task DiscoverDevices(IConfiguration config)
         {
             var configEnum = config.AsEnumerable();
 
